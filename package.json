@@ -1,6 +1,6 @@
 {
-  "name": "ghard-bot",
-  "version": "1.0.0",
+  "name": "gharred-bot",
+  "version": "1.3.0",
   "description": "Public Ghard Bot",
   "main": "index.js",
   "scripts": {
