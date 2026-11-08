@@ -2,6 +2,5 @@
   "prefix": "!",
   "brandName": "Gharred",
   "version": "1.0.0",
-  "activityText": "Gharred Service",
-  "delayMs": 150
+  "activityText": "Gharred Service"
 }
