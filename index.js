@@ -147,4 +147,11 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-client.login(process.env.TOKEN);
+const TOKEN = process.env.DISCORD_TOKEN;
+
+if (!TOKEN) {
+    console.error('خطأ: لم يتم وضع التوكن في إعدادات الاستضافة');
+    process.exit(1);
+}
+
+client.login(TOKEN);
