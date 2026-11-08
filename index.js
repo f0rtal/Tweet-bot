@@ -2,7 +2,8 @@ const {
     Client, 
     GatewayIntentBits, 
     EmbedBuilder, 
-    PermissionFlagsBits 
+    PermissionFlagsBits,
+    ActivityType 
 } = require('discord.js');
 const fs = require('fs');
 
@@ -19,10 +20,28 @@ const client = new Client({
 
 const PREFIX = config.prefix;
 const cooldowns = new Map();
+const disabledChannels = new Set(); // لتخزين الأروم الموقوف فيها التغريد مؤقتاً
 
 client.once('ready', () => {
     console.log(`تم تشغيل البوت بنجاح باسم: ${client.user.tag}`);
-    client.user.setActivity(config.activityText);
+    
+    const updatePresence = () => {
+        const guildCount = client.guilds.cache.size;
+        client.user.setActivity(`Gharred Service | ${guildCount} Servers`, { type: ActivityType.Watching });
+    };
+    
+    updatePresence();
+    setInterval(updatePresence, 60000);
+});
+
+client.on('guildCreate', () => {
+    const guildCount = client.guilds.cache.size;
+    client.user.setActivity(`Gharred Service | ${guildCount} Servers`, { type: ActivityType.Watching });
+});
+
+client.on('guildDelete', () => {
+    const guildCount = client.guilds.cache.size;
+    client.user.setActivity(`Gharred Service | ${guildCount} Servers`, { type: ActivityType.Watching });
 });
 
 client.on('messageCreate', async (message) => {
@@ -46,11 +65,51 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
     const command = args.shift().toLowerCase();
 
-    if (command === 'version' || command === 'الاصدار') {
-        return message.reply(`إصدار النظام الحالي: ${config.version}`);
+    // 1. أمر المساعدة (هيلب) في مقدمة الأوامر
+    if (command === 'help' || command === 'هيلب' || command === 'اوامر') {
+        const helpEmbed = new EmbedBuilder()
+            .setTitle(`أوامر خدمة غرد العامة`)
+            .setDescription('قائمة الأوامر المتاحة للاستخدام في سيرفرك:')
+            .setColor(0x1da1f2)
+            .addFields(
+                { name: 'أوامر الأعضاء', value: '`!هيلب` - لعرض قائمة الأوامر\n`!غرد [النص]` - لنشر تغريدة أو خاطرة في الشات\n`!الاصدار` - لمعرفة إصدار البوت' },
+                { name: 'أوامر الإدارة والتحكم', value: '`!ايقاف-تغريد` - لإيقاف استقبال التغريدات في هذا الروم\n`!تشغيل-تغريد` - لإعادة تفعيل التغريدات في هذا الروم\n`!طرد [@العضو] [السبب]` - لطرد عضو\n`!بان [@العضو] [السبب]` - لحظر عضو\n`!ميوت [@العضو] [الدقائق] [السبب]` - لإعطاء ميوت مؤقت\n`!مسح [العدد]` - لمسح الرسائل (1-100)\n`!قفل` - لقفل الروم الحالي\n`!فتح` - لفتح الروم الحالي' }
+            )
+            .setFooter({ text: `Gharred Service • الإصدار ${config.version}` })
+            .setTimestamp();
+
+        return message.reply({ embeds: [helpEmbed] });
     }
 
+    // 2. أمر الإصدار
+    if (command === 'version' || command === 'الاصدار') {
+        return message.reply(`إصدار النظام الحالي: v${config.version}`);
+    }
+
+    // 3. أمر إيقاف التغريد في الروم الحالي
+    if (command === 'ايقاف-تغريد' || command === 'stoptweet') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply('ليس لديك صلاحية');
+        if (disabledChannels.has(message.channel.id)) return message.reply('التغريد متوقف مسبقاً في هذا الروم.');
+        
+        disabledChannels.add(message.channel.id);
+        return message.reply('تم إيقاف خدمة التغريد في هذا الروم بنجاح.');
+    }
+
+    // 4. أمر تشغيل التغريد في الروم الحالي
+    if (command === 'تشغيل-تغريد' || command === 'starttweet') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply('ليس لديك صلاحية');
+        if (!disabledChannels.has(message.channel.id)) return message.reply('التغريد مَفعل أساساً في هذا الروم.');
+        
+        disabledChannels.delete(message.channel.id);
+        return message.reply('تم إعادة تشغيل وتفعيل خدمة التغريد في هذا الروم بنجاح.');
+    }
+
+    // 5. نظام التغريد العام (مع التحقق إذا كان الروم موقوفاً)
     if (command === 'غرد' || command === 'tweet') {
+        if (disabledChannels.has(message.channel.id)) {
+            return message.reply('عذراً، خدمة التغريد متوقفة في هذا الروم حالياً من قبل الإدارة.');
+        }
+
         const text = args.join(' ');
         if (!text) return message.reply('اكتب النص بعد الأمر');
 
@@ -59,16 +118,18 @@ client.on('messageCreate', async (message) => {
         const embed = new EmbedBuilder()
             .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
             .setDescription(text)
-            .setColor(0x2b2d31)
-            .setFooter({ text: config.brandName })
+            .setColor(0x1da1f2)
+            .setFooter({ text: `${config.brandName} • نشر بواسطة العضو` })
             .setTimestamp();
 
         const sentMsg = await message.channel.send({ embeds: [embed] });
         await sentMsg.react('👍').catch(() => {});
         await sentMsg.react('👎').catch(() => {});
+        await sentMsg.react('⁉️').catch(() => {});
         return;
     }
 
+    // 6. أوامر الإدارة
     if (command === 'طرد' || command === 'kick') {
         if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply('ليس لديك صلاحية');
         const member = message.mentions.members.first();
