@@ -5,5 +5,6 @@
   "ownerId": "341807502977138697",
   "officialGuildId": "1453146920095842406",
   "arabicRole": "",
-  "englishRole": ""
+  "englishRole": "",
+  "disabledChannels": []
 }
