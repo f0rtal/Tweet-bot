@@ -3,11 +3,16 @@ const {
     GatewayIntentBits, 
     EmbedBuilder, 
     PermissionFlagsBits,
-    ActivityType 
+    ActivityType,
+    ActionRowBuilder,
+    StringSelectMenuBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ChannelType 
 } = require('discord.js');
 const fs = require('fs');
 
-const config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+let config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 
 const client = new Client({
     intents: [
@@ -20,7 +25,7 @@ const client = new Client({
 
 const PREFIX = config.prefix;
 const cooldowns = new Map();
-const disabledChannels = new Set(); // لتخزين الأروم الموقوف فيها التغريد مؤقتاً
+const disabledChannels = new Set();
 
 client.once('ready', () => {
     console.log(`تم تشغيل البوت بنجاح باسم: ${client.user.tag}`);
@@ -47,6 +52,72 @@ client.on('guildDelete', () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
+    if (message.content.startsWith(PREFIX + 'ticof')) {
+        if (message.guild.id !== config.officialGuildId) {
+            return message.reply('عذرا، هذا الأمر يخص السيرفر الرسمي للبوت فقط.');
+        }
+        if (message.author.id !== config.ownerId) {
+            return message.reply('عذرا، هذا الأمر مخصص لمالك البوت فقط.');
+        }
+
+        const args = message.content.slice(PREFIX.length + 5).trim().split(/\s+/);
+        const role = message.mentions.roles.first();
+        const type = args[1] ? args[1].toLowerCase() : '';
+
+        if (!role || (type !== 'ar' && type !== 'en')) {
+            return message.reply('الاستخدام الصحيح:\n`!ticof @رتبة_العربي ar`\n`!ticof @رتبة_الانجليزي en`');
+        }
+
+        if (type === 'ar') {
+            config.arabicRole = role.id;
+            fs.writeFileSync('./config.json', JSON.stringify(config, null, 2));
+            return message.reply(`تم تحديث رتبة الدعم العربي بنجاح إلى: ${role.name}.`);
+        } else if (type === 'en') {
+            config.englishRole = role.id;
+            fs.writeFileSync('./config.json', JSON.stringify(config, null, 2));
+            return message.reply(`تم تحديث رتبة الدعم الإنجليزي بنجاح إلى: ${role.name}.`);
+        }
+    }
+
+    if (message.content === PREFIX + 'setup-ticket') {
+        if (message.guild.id !== config.officialGuildId || message.author.id !== config.ownerId) {
+            return message.reply('عذرا، ليس لديك صلاحية لاستخدام هذا الأمر.');
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('مركز الدعم الفني والخدمات')
+            .setDescription('يرجى اختيار أحد الخيارات أدناه لفتح تذكرة جديدة وسيقوم فريق المختصين بمساعدتكم في أسرع وقت ممكن.\nPlease select an option below to open a support ticket.')
+            .setColor(0x1da1f2)
+            .setFooter({ text: `${config.brandName} - جميع الحقوق محفوظة` })
+            .setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('ticket_select_menu')
+                .setPlaceholder('اختر خيارا مناسبا...')
+                .addOptions([
+                    {
+                        label: 'عطل فني او مشاكل',
+                        description: 'فتح تذكرة دعم فني باللغة العربية',
+                        value: 'create_arabic_ticket'
+                    },
+                    {
+                        label: 'English Support Ticket',
+                        description: 'Open a technical support ticket in English',
+                        value: 'create_english_ticket'
+                    },
+                    {
+                        label: 'Reset Menu',
+                        description: 'إعادة تعيين القائمة أو الخيارات الإضافية',
+                        value: 'reset_ticket_menu'
+                    }
+                ])
+        );
+
+        await message.channel.send({ embeds: [embed], components: [row] });
+        return message.delete().catch(() => {});
+    }
+
     if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
         const now = Date.now();
         const cooldownTime = 2500;
@@ -65,53 +136,48 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
     const command = args.shift().toLowerCase();
 
-    // 1. أمر المساعدة (هيلب) في مقدمة الأوامر
     if (command === 'help' || command === 'هيلب' || command === 'اوامر') {
         const helpEmbed = new EmbedBuilder()
-            .setTitle(`أوامر خدمة غرد العامة`)
-            .setDescription('قائمة الأوامر المتاحة للاستخدام في سيرفرك:')
+            .setTitle('قائمة أوامر خدمة غرد العامة')
+            .setDescription('قائمة الأوامر المتاحة للاستخدام في السيرفرات:')
             .setColor(0x1da1f2)
             .addFields(
-                { name: 'أوامر الأعضاء', value: '`!هيلب` - لعرض قائمة الأوامر\n`!غرد [النص]` - لنشر تغريدة أو خاطرة في الشات\n`!الاصدار` - لمعرفة إصدار البوت' },
-                { name: 'أوامر الإدارة والتحكم', value: '`!ايقاف-تغريد` - لإيقاف استقبال التغريدات في هذا الروم\n`!تشغيل-تغريد` - لإعادة تفعيل التغريدات في هذا الروم\n`!طرد [@العضو] [السبب]` - لطرد عضو\n`!بان [@العضو] [السبب]` - لحظر عضو\n`!ميوت [@العضو] [الدقائق] [السبب]` - لإعطاء ميوت مؤقت\n`!مسح [العدد]` - لمسح الرسائل (1-100)\n`!قفل` - لقفل الروم الحالي\n`!فتح` - لفتح الروم الحالي' }
+                { name: 'أوامر الأعضاء', value: '`!هيلب` - لعرض قائمة الأوامر.\n`!غرد [النص]` - لنشر خاطرة أو منشور في المحادثة.\n`!الاصدار` - لمعرفة إصدار النظام الحالي.' },
+                { name: 'أوامر الإدارة والتحكم', value: '`!ايقاف-تغريد` - لإيقاف استقبال التغريدات في الروم الحالي.\n`!تشغيل-تغريد` - لإعادة تفعيل التغريدات في الروم الحالي.\n`!طرد [@العضو] [السبب]` - لطرد عضو مخالف.\n`!بان [@العضو] [السبب]` - لحظر عضو نهائيا.\n`!ميوت [@العضو] [الدقائق] [السبب]` - لتقييد العضو مؤقتا.\n`!مسح [العدد]` - لمسح الرسائل دفعة واحدة.\n`!قفل` - لقفل الروم الحالي.\n`!فتح` - لفتح الروم الحالي.' }
             )
-            .setFooter({ text: `Gharred Service • الإصدار ${config.version}` })
+            .setFooter({ text: `Gharred Service - الإصدار ${config.version}` })
             .setTimestamp();
 
         return message.reply({ embeds: [helpEmbed] });
     }
 
-    // 2. أمر الإصدار
     if (command === 'version' || command === 'الاصدار') {
-        return message.reply(`إصدار النظام الحالي: v${config.version}`);
+        return message.reply(`إصدار النظام الحالي: v${config.version}.`);
     }
 
-    // 3. أمر إيقاف التغريد في الروم الحالي
     if (command === 'ايقاف-تغريد' || command === 'stoptweet') {
-        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply('ليس لديك صلاحية');
-        if (disabledChannels.has(message.channel.id)) return message.reply('التغريد متوقف مسبقاً في هذا الروم.');
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply('عذرا، ليس لديك صلاحية.');
+        if (disabledChannels.has(message.channel.id)) return message.reply('خدمة التغريد متوقفة مسبقا في هذا الروم.');
         
         disabledChannels.add(message.channel.id);
         return message.reply('تم إيقاف خدمة التغريد في هذا الروم بنجاح.');
     }
 
-    // 4. أمر تشغيل التغريد في الروم الحالي
     if (command === 'تشغيل-تغريد' || command === 'starttweet') {
-        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply('ليس لديك صلاحية');
-        if (!disabledChannels.has(message.channel.id)) return message.reply('التغريد مَفعل أساساً في هذا الروم.');
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply('عذرا، ليس لديك صلاحية.');
+        if (!disabledChannels.has(message.channel.id)) return message.reply('خدمة التغريد مفعلة أساسا في هذا الروم.');
         
         disabledChannels.delete(message.channel.id);
-        return message.reply('تم إعادة تشغيل وتفعيل خدمة التغريد في هذا الروم بنجاح.');
+        return message.reply('تم إعادة تفعيل خدمة التغريد في هذا الروم بنجاح.');
     }
 
-    // 5. نظام التغريد العام (مع التحقق إذا كان الروم موقوفاً)
     if (command === 'غرد' || command === 'tweet') {
         if (disabledChannels.has(message.channel.id)) {
-            return message.reply('عذراً، خدمة التغريد متوقفة في هذا الروم حالياً من قبل الإدارة.');
+            return message.reply('عذرا، خدمة التغريد متوقفة في هذا الروم حاليا من قبل الإدارة.');
         }
 
         const text = args.join(' ');
-        if (!text) return message.reply('اكتب النص بعد الأمر');
+        if (!text) return message.reply('يرجى كتابة النص المراد نشره بعد الأمر.');
 
         await message.delete().catch(() => {});
 
@@ -119,91 +185,184 @@ client.on('messageCreate', async (message) => {
             .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
             .setDescription(text)
             .setColor(0x1da1f2)
-            .setFooter({ text: `${config.brandName} • نشر بواسطة العضو` })
+            .setFooter({ text: `${config.brandName} - تم النشر بواسطة العضو` })
             .setTimestamp();
 
         const sentMsg = await message.channel.send({ embeds: [embed] });
         await sentMsg.react('👍').catch(() => {});
         await sentMsg.react('👎').catch(() => {});
-        await sentMsg.react('⁉️').catch(() => {});
         return;
     }
 
-    // 6. أوامر الإدارة
     if (command === 'طرد' || command === 'kick') {
-        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply('ليس لديك صلاحية');
+        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply('عذرا، ليس لديك صلاحية.');
         const member = message.mentions.members.first();
         const reason = args.slice(1).join(' ') || 'بدون سبب';
-        if (!member) return message.reply('الاستخدام: !طرد @العضو السبب');
+        if (!member) return message.reply('الاستخدام الصحيح: !طرد @العضو السبب.');
 
         try {
             await member.kick(reason);
-            message.reply(`تم طرد العضو ${member.user.tag}`);
+            message.reply(`تم طرد العضو ${member.user.tag} بنجاح.`);
         } catch (e) {
-            message.reply('حدث خطأ أثناء تنفيذ الأمر');
+            message.reply('حدث خطأ أثناء تنفيذ الأمر.');
         }
     }
 
     if (command === 'بان' || command === 'ban') {
-        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply('ليس لديك صلاحية');
+        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply('عذرا، ليس لديك صلاحية.');
         const member = message.mentions.members.first();
         const reason = args.slice(1).join(' ') || 'بدون سبب';
-        if (!member) return message.reply('الاستخدام: !بان @العضو السبب');
+        if (!member) return message.reply('الاستخدام الصحيح: !بان @العضو السبب.');
 
         try {
             await member.ban({ reason });
-            message.reply(`تم حظر العضو ${member.user.tag}`);
+            message.reply(`تم حظر العضو ${member.user.tag} نهائيا.`);
         } catch (e) {
-            message.reply('حدث خطأ أثناء تنفيذ الأمر');
+            message.reply('حدث خطأ أثناء تنفيذ الأمر.');
         }
     }
 
     if (command === 'ميوت' || command === 'timeout') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) return message.reply('ليس لديك صلاحية');
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) return message.reply('عذرا، ليس لديك صلاحية.');
         const member = message.mentions.members.first();
         const duration = parseInt(args[1]) || 5;
         const reason = args.slice(2).join(' ') || 'بدون سبب';
-        if (!member) return message.reply('الاستخدام: !ميوت @العضو الدقائق السبب');
+        if (!member) return message.reply('الاستخدام الصحيح: !ميوت @العضو الدقائق السبب.');
 
         try {
             await member.timeout(duration * 60 * 1000, reason);
-            message.reply(`تم تقييد العضو ${member.user.tag} لمدة ${duration} دقائق`);
+            message.reply(`تم تقييد العضو ${member.user.tag} لمدة ${duration} دقائق.`);
         } catch (e) {
-            message.reply('حدث خطأ أثناء تنفيذ الأمر');
+            message.reply('حدث خطأ أثناء تنفيذ الأمر.');
         }
     }
 
     if (command === 'مسح' || command === 'clear') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) return message.reply('ليس لديك صلاحية');
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) return message.reply('عذرا، ليس لديك صلاحية.');
         const count = parseInt(args[0]);
-        if (!count || count < 1 || count > 100) return message.reply('الاستخدام: !مسح العدد من 1 الى 100');
+        if (!count || count < 1 || count > 100) return message.reply('الاستخدام الصحيح: !مسح [عدد من 1 إلى 100].');
 
         try {
             await message.channel.bulkDelete(count, true);
-            const msg = await message.channel.send(`تم مسح ${count} رسالة`);
+            const msg = await message.channel.send(`تم مسح ${count} رسالة بنجاح.`);
             setTimeout(() => msg.delete().catch(() => {}), 3000);
         } catch (e) {
-            message.reply('لا يمكن مسح رسائل أقدم من أسبوعين');
+            message.reply('لا يمكن مسح رسائل أقدم من أسبوعين.');
         }
     }
 
     if (command === 'قفل' || command === 'lock') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply('ليس لديك صلاحية');
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply('عذرا، ليس لديك صلاحية.');
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
-            message.reply('تم قفل الروم');
+            message.reply('تم قفل الروم بنجاح.');
         } catch (e) {
-            message.reply('فشل قفل الروم');
+            message.reply('فشل قفل الروم.');
         }
     }
 
     if (command === 'فتح' || command === 'unlock') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply('ليس لديك صلاحية');
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply('عذرا، ليس لديك صلاحية.');
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
-            message.reply('تم فتح الروم');
+            message.reply('تم فتح الروم بنجاح.');
         } catch (e) {
-            message.reply('فشل فتح الروم');
+            message.reply('فشل فتح الروم.');
+        }
+    }
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === 'ticket_select_menu') {
+            const choice = interaction.values[0];
+
+            if (choice === 'reset_ticket_menu') {
+                return interaction.reply({ content: 'تم إعادة تعيين القائمة بنجاح.', ephemeral: true });
+            }
+
+            const isArabic = choice === 'create_arabic_ticket';
+            const ticketName = isArabic ? `ticket-ar-${interaction.user.username}` : `ticket-en-${interaction.user.username}`;
+            const targetRoleId = isArabic ? config.arabicRole : config.englishRole;
+
+            const channel = await interaction.guild.channels.create({
+                name: ticketName,
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    {
+                        id: interaction.guild.id,
+                        deny: [PermissionFlagsBits.ViewChannel]
+                    },
+                    {
+                        id: interaction.user.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    },
+                    ...(targetRoleId ? [{
+                        id: targetRoleId,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    }] : [])
+                ]
+            });
+
+            const welcomeEmbed = new EmbedBuilder()
+                .setTitle(isArabic ? 'تذكرة دعم فني جديدة' : 'New Support Ticket')
+                .setDescription(isArabic ? 'مرحباً بك، يرجى شرح مشكلتك بالتفصيل وسيقوم فريق الدعم بالرد عليك قريباً.\n\nاضغط على زر استلام التكت أدناه ليقوم أحد المسؤولين بمباشرة حالتك.' : 'Welcome, please describe your issue in detail and our support team will assist you shortly.\n\nClick the Claim Ticket button below so a staff member can take your case.')
+                .setColor(0x1da1f2)
+                .setTimestamp();
+
+            const claimRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('claim_ticket')
+                    .setLabel(isArabic ? 'استلام التكت' : 'Claim Ticket')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('close_ticket')
+                    .setLabel(isArabic ? 'إغلاق التكت' : 'Close Ticket')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            await channel.send({ content: `${interaction.user} ${targetRoleId ? `<@&${targetRoleId}>` : ''}`, embeds: [welcomeEmbed], components: [claimRow] });
+            return interaction.reply({ content: `تم إنشاء تذكرتك بنجاح: ${channel}.`, ephemeral: true });
+        }
+    }
+
+    if (interaction.isButton()) {
+        if (interaction.customId === 'claim_ticket') {
+            const member = interaction.member;
+            const hasPermission = (config.arabicRole && member.roles.cache.has(config.arabicRole)) || 
+                                  (config.englishRole && member.roles.cache.has(config.englishRole)) || 
+                                  member.permissions.has(PermissionFlagsBits.Administrator);
+
+            if (!hasPermission) {
+                return interaction.reply({ content: 'عذرا، هذا الزر مخصص لفريق الدعم المسؤول عن التذاكر فقط.', ephemeral: true });
+            }
+
+            const claimEmbed = new EmbedBuilder()
+                .setDescription(`تم استلام هذه التذكرة بواسطة: ${interaction.user}`)
+                .setColor(0x00ff00);
+
+            const disabledRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('claim_ticket')
+                    .setLabel('تم الاستلام')
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(true),
+                new ButtonBuilder()
+                    .setCustomId('close_ticket')
+                    .setLabel('إغلاق التكت')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            await interaction.update({ components: [disabledRow] });
+            return interaction.channel.send({ embeds: [claimEmbed] });
+        }
+
+        if (interaction.customId === 'close_ticket') {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+                return interaction.reply({ content: 'عذرا، ليس لديك صلاحية لإغلاق التذكرة.', ephemeral: true });
+            }
+            await interaction.reply('جاري إغلاق التذكرة وحذف الروم خلال خمس ثوان.');
+            setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
         }
     }
 });
@@ -211,7 +370,7 @@ client.on('messageCreate', async (message) => {
 const TOKEN = process.env.DISCORD_TOKEN;
 
 if (!TOKEN) {
-    console.error('خطأ: لم يتم وضع التوكن في إعدادات الاستضافة');
+    console.error('خطأ: لم يتم وضع التوكن في إعدادات الاستضافة.');
     process.exit(1);
 }
 
