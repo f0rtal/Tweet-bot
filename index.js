@@ -25,7 +25,15 @@ const client = new Client({
 
 const PREFIX = config.prefix;
 const cooldowns = new Map();
-const disabledChannels = new Set();
+
+// استرجاع الأروم الموقوفة من الذاكرة الدائمة (config.json) لكي لا ينساها البوت أبداً
+const disabledChannels = new Set(config.disabledChannels || []);
+
+// دالة لحفظ الحالات مباشرة في الملف
+const saveConfig = () => {
+    config.disabledChannels = Array.from(disabledChannels);
+    fs.writeFileSync('./config.json', JSON.stringify(config, null, 2));
+};
 
 client.once('ready', () => {
     console.log(`تم تشغيل البوت بنجاح باسم: ${client.user.tag}`);
@@ -118,7 +126,6 @@ client.on('messageCreate', async (message) => {
         return message.delete().catch(() => {});
     }
 
-    // أمر إضافة شخص للتذكرة يدويًا عبر المحادثة
     if (message.content.startsWith(PREFIX + 'add')) {
         const member = message.mentions.members.first();
         if (!member) return message.reply('الاستخدام الصحيح: `!add @العضو`');
@@ -177,6 +184,7 @@ client.on('messageCreate', async (message) => {
         if (disabledChannels.has(message.channel.id)) return message.reply('خدمة التغريد متوقفة مسبقا في هذا الروم.');
         
         disabledChannels.add(message.channel.id);
+        saveConfig(); // حفظ الحالة في الملف لكي لا ينسى البوت أبداً
         return message.reply('تم إيقاف خدمة التغريد في هذا الروم بنجاح.');
     }
 
@@ -185,6 +193,7 @@ client.on('messageCreate', async (message) => {
         if (!disabledChannels.has(message.channel.id)) return message.reply('خدمة التغريد مفعلة أساسا في هذا الروم.');
         
         disabledChannels.delete(message.channel.id);
+        saveConfig(); // تحديث وحفظ الحالة في الملف
         return message.reply('تم إعادة تفعيل خدمة التغريد في هذا الروم بنجاح.');
     }
 
@@ -290,7 +299,6 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-    // 1. القائمة الأساسية لإنشاء التذكرة
     if (interaction.isStringSelectMenu()) {
         if (interaction.customId === 'ticket_select_menu') {
             const choice = interaction.values[0];
@@ -306,7 +314,7 @@ client.on('interactionCreate', async (interaction) => {
             const channel = await interaction.guild.channels.create({
                 name: ticketName,
                 type: ChannelType.GuildText,
-                topic: `ticket_owner_${interaction.user.id}`, // حفظ أيدي صاحب التذكرة في الوصف
+                topic: `ticket_owner_${interaction.user.id}`,
                 permissionOverwrites: [
                     {
                         id: interaction.guild.id,
@@ -329,7 +337,6 @@ client.on('interactionCreate', async (interaction) => {
                 .setColor(0x1da1f2)
                 .setTimestamp();
 
-            // قائمة التحكم داخل التذكرة
             const controlMenu = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
                     .setCustomId('ticket_control_menu')
@@ -362,7 +369,6 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `تم إنشاء تذكرتك بنجاح: ${channel}.`, ephemeral: true });
         }
 
-        // 2. قائمة إدارة والتحكم داخل التذكرة (Menu)
         if (interaction.customId === 'ticket_control_menu') {
             const action = interaction.values[0];
             const member = interaction.member;
@@ -371,7 +377,6 @@ client.on('interactionCreate', async (interaction) => {
                                   (config.englishRole && member.roles.cache.has(config.englishRole)) || 
                                   member.permissions.has(PermissionFlagsBits.Administrator);
 
-            // استلام التكت
             if (action === 'claim_ticket') {
                 if (!hasPermission) {
                     return interaction.reply({ content: 'عذرا، هذا الخيار مخصص لفريق الدعم المسؤول عن التذاكر فقط.', ephemeral: true });
@@ -385,7 +390,6 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
 
-            // استدعاء فاتح التذكرة
             if (action === 'call_owner') {
                 if (!hasPermission) {
                     return interaction.reply({ content: 'عذرا، هذا الخيار مخصص لفريق الدعم فقط.', ephemeral: true });
@@ -400,7 +404,6 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: `نرجو التواجد والمتابعة هنا: <@${ownerId}>.` });
             }
 
-            // إضافة شخص للتذكرة
             if (action === 'add_member') {
                 if (!hasPermission) {
                     return interaction.reply({ content: 'عذرا، هذا الخيار مخصص لفريق الدعم فقط.', ephemeral: true });
@@ -409,7 +412,6 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: 'لإضافة شخص إلى التذكرة، يرجى كتابة الأمر التالي في المحادثة:\n`!add @العضو`', ephemeral: true });
             }
 
-            // إغلاق التكت
             if (action === 'close_ticket') {
                 if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels) && !hasPermission) {
                     return interaction.reply({ content: 'عذرا، ليس لديك صلاحية لإغلاق التذكرة.', ephemeral: true });
