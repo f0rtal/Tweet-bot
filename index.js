@@ -118,6 +118,23 @@ client.on('messageCreate', async (message) => {
         return message.delete().catch(() => {});
     }
 
+    // أمر إضافة شخص للتذكرة يدويًا عبر المحادثة
+    if (message.content.startsWith(PREFIX + 'add')) {
+        const member = message.mentions.members.first();
+        if (!member) return message.reply('الاستخدام الصحيح: `!add @العضو`');
+        
+        try {
+            await message.channel.permissionOverwrites.edit(member.id, {
+                ViewChannel: true,
+                SendMessages: true,
+                ReadMessageHistory: true
+            });
+            return message.reply(`تم إضافة العضو ${member} إلى التذكرة بنجاح.`);
+        } catch (e) {
+            return message.reply('حدث خطأ أثناء محاولة إضافة العضو.');
+        }
+    }
+
     if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
         const now = Date.now();
         const cooldownTime = 2500;
@@ -143,7 +160,7 @@ client.on('messageCreate', async (message) => {
             .setColor(0x1da1f2)
             .addFields(
                 { name: 'أوامر الأعضاء', value: '`!هيلب` - لعرض قائمة الأوامر.\n`!غرد [النص]` - لنشر خاطرة أو منشور في المحادثة.\n`!الاصدار` - لمعرفة إصدار النظام الحالي.' },
-                { name: 'أوامر الإدارة والتحكم', value: '`!ايقاف-تغريد` - لإيقاف استقبال التغريدات في الروم الحالي.\n`!تشغيل-تغريد` - لإعادة تفعيل التغريدات في الروم الحالي.\n`!طرد [@العضو] [السبب]` - لطرد عضو مخالف.\n`!بان [@العضو] [السبب]` - لحظر عضو نهائيا.\n`!ميوت [@العضو] [الدقائق] [السبب]` - لتقييد العضو مؤقتا.\n`!مسح [العدد]` - لمسح الرسائل دفعة واحدة.\n`!قفل` - لقفل الروم الحالي.\n`!فتح` - لفتح الروم الحالي.' }
+                { name: 'أوامر الإدارة والتحكم', value: '`!ايقاف-تغريد` - لإيقاف استقبال التغريدات في الروم الحالي.\n`!تشغيل-تغريد` - لإعادة تفعيل التغريدات في الروم الحالي.\n`!طرد [@العضو] [السبب]` - لطرد عضو مخالف.\n`!بان [@العضو] [السبب]` - لحظر عضو نهائيا.\n`!ميوت [@العضو] [الدقائق] [السبب]` - لتقييد العضو مؤقتا.\n`!مسح [العدد]` - لمسح الرسائل دفعة واحدة.\n`!قفل` - لقفل الروم الحالي.\n`!فتح` - لفتح الروم الحالي.\n`!add [@العضو]` - لإضافة شخص إلى التذكرة.' }
             )
             .setFooter({ text: `Gharred Service - الإصدار ${config.version}` })
             .setTimestamp();
@@ -273,6 +290,7 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
+    // 1. القائمة الأساسية لإنشاء التذكرة
     if (interaction.isStringSelectMenu()) {
         if (interaction.customId === 'ticket_select_menu') {
             const choice = interaction.values[0];
@@ -288,6 +306,7 @@ client.on('interactionCreate', async (interaction) => {
             const channel = await interaction.guild.channels.create({
                 name: ticketName,
                 type: ChannelType.GuildText,
+                topic: `ticket_owner_${interaction.user.id}`, // حفظ أيدي صاحب التذكرة في الوصف
                 permissionOverwrites: [
                     {
                         id: interaction.guild.id,
@@ -306,63 +325,99 @@ client.on('interactionCreate', async (interaction) => {
 
             const welcomeEmbed = new EmbedBuilder()
                 .setTitle(isArabic ? 'تذكرة دعم فني جديدة' : 'New Support Ticket')
-                .setDescription(isArabic ? 'مرحباً بك، يرجى شرح مشكلتك بالتفصيل وسيقوم فريق الدعم بالرد عليك قريباً.\n\nاضغط على زر استلام التكت أدناه ليقوم أحد المسؤولين بمباشرة حالتك.' : 'Welcome, please describe your issue in detail and our support team will assist you shortly.\n\nClick the Claim Ticket button below so a staff member can take your case.')
+                .setDescription(isArabic ? 'مرحباً بك، يرجى شرح مشكلتك بالتفصيل وسيقوم فريق الدعم بالرد عليك قريباً.\n\nاستخدم القائمة أدناه للتحكم بخيارات التذكرة.' : 'Welcome, please describe your issue in detail and our support team will assist you shortly.\n\nUse the menu below to control ticket options.')
                 .setColor(0x1da1f2)
                 .setTimestamp();
 
-            const claimRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('claim_ticket')
-                    .setLabel(isArabic ? 'استلام التكت' : 'Claim Ticket')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId('close_ticket')
-                    .setLabel(isArabic ? 'إغلاق التكت' : 'Close Ticket')
-                    .setStyle(ButtonStyle.Danger)
+            // قائمة التحكم داخل التذكرة
+            const controlMenu = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId('ticket_control_menu')
+                    .setPlaceholder('اختر عملية لإدارة التذكرة...')
+                    .addOptions([
+                        {
+                            label: 'استلام التكت',
+                            description: 'تسجيل استلام التذكرة ومباشرتها رسميا',
+                            value: 'claim_ticket'
+                        },
+                        {
+                            label: 'استدعاء فاتح التذكرة',
+                            description: 'تنبيه صاحب التذكرة للرد والمتابعة',
+                            value: 'call_owner'
+                        },
+                        {
+                            label: 'إضافة شخص للتذكرة',
+                            description: 'منح شخص آخر صلاحية دخول التذكرة',
+                            value: 'add_member'
+                        },
+                        {
+                            label: 'إغلاق التكت',
+                            description: 'إغلاق التذكرة وحذف الغرفة نهائيا',
+                            value: 'close_ticket'
+                        }
+                    ])
             );
 
-            await channel.send({ content: `${interaction.user} ${targetRoleId ? `<@&${targetRoleId}>` : ''}`, embeds: [welcomeEmbed], components: [claimRow] });
+            await channel.send({ content: `${interaction.user} ${targetRoleId ? `<@&${targetRoleId}>` : ''}`, embeds: [welcomeEmbed], components: [controlMenu] });
             return interaction.reply({ content: `تم إنشاء تذكرتك بنجاح: ${channel}.`, ephemeral: true });
         }
-    }
 
-    if (interaction.isButton()) {
-        if (interaction.customId === 'claim_ticket') {
+        // 2. قائمة إدارة والتحكم داخل التذكرة (Menu)
+        if (interaction.customId === 'ticket_control_menu') {
+            const action = interaction.values[0];
             const member = interaction.member;
+            
             const hasPermission = (config.arabicRole && member.roles.cache.has(config.arabicRole)) || 
                                   (config.englishRole && member.roles.cache.has(config.englishRole)) || 
                                   member.permissions.has(PermissionFlagsBits.Administrator);
 
-            if (!hasPermission) {
-                return interaction.reply({ content: 'عذرا، هذا الزر مخصص لفريق الدعم المسؤول عن التذاكر فقط.', ephemeral: true });
+            // استلام التكت
+            if (action === 'claim_ticket') {
+                if (!hasPermission) {
+                    return interaction.reply({ content: 'عذرا، هذا الخيار مخصص لفريق الدعم المسؤول عن التذاكر فقط.', ephemeral: true });
+                }
+
+                const claimEmbed = new EmbedBuilder()
+                    .setDescription(`تم استلام هذه التذكرة بواسطة: ${interaction.user}`)
+                    .setColor(0x00ff00);
+
+                await interaction.reply({ embeds: [claimEmbed] });
+                return;
             }
 
-            const claimEmbed = new EmbedBuilder()
-                .setDescription(`تم استلام هذه التذكرة بواسطة: ${interaction.user}`)
-                .setColor(0x00ff00);
+            // استدعاء فاتح التذكرة
+            if (action === 'call_owner') {
+                if (!hasPermission) {
+                    return interaction.reply({ content: 'عذرا، هذا الخيار مخصص لفريق الدعم فقط.', ephemeral: true });
+                }
 
-            const disabledRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('claim_ticket')
-                    .setLabel('تم الاستلام')
-                    .setStyle(ButtonStyle.Success)
-                    .setDisabled(true),
-                new ButtonBuilder()
-                    .setCustomId('close_ticket')
-                    .setLabel('إغلاق التكت')
-                    .setStyle(ButtonStyle.Danger)
-            );
+                const channelTopic = interaction.channel.topic;
+                if (!channelTopic || !channelTopic.startsWith('ticket_owner_')) {
+                    return interaction.reply({ content: 'عذرا، لم يتم العثور على صاحب هذه التذكرة.', ephemeral: true });
+                }
 
-            await interaction.update({ components: [disabledRow] });
-            return interaction.channel.send({ embeds: [claimEmbed] });
-        }
-
-        if (interaction.customId === 'close_ticket') {
-            if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-                return interaction.reply({ content: 'عذرا، ليس لديك صلاحية لإغلاق التذكرة.', ephemeral: true });
+                const ownerId = channelTopic.replace('ticket_owner_', '');
+                return interaction.reply({ content: `نرجو التواجد والمتابعة هنا: <@${ownerId}>.` });
             }
-            await interaction.reply('جاري إغلاق التذكرة وحذف الروم خلال خمس ثوان.');
-            setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+
+            // إضافة شخص للتذكرة
+            if (action === 'add_member') {
+                if (!hasPermission) {
+                    return interaction.reply({ content: 'عذرا، هذا الخيار مخصص لفريق الدعم فقط.', ephemeral: true });
+                }
+
+                return interaction.reply({ content: 'لإضافة شخص إلى التذكرة، يرجى كتابة الأمر التالي في المحادثة:\n`!add @العضو`', ephemeral: true });
+            }
+
+            // إغلاق التكت
+            if (action === 'close_ticket') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels) && !hasPermission) {
+                    return interaction.reply({ content: 'عذرا، ليس لديك صلاحية لإغلاق التذكرة.', ephemeral: true });
+                }
+
+                await interaction.reply('جاري إغلاق التذكرة وحذف الروم خلال خمس ثوان.');
+                setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+            }
         }
     }
 });
